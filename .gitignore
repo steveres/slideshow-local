@@ -1,0 +1,7 @@
+# Dependencies and build leftovers
+node_modules/
+build/
+
+# Contains the Google Maps API key - never commit
+apikey.txt
+slideshow.html

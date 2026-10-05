@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Slideshow</title>
+<style>
+  :root {
+    --fade: 1000ms;            /* overwritten from script so timing has one source */
+    --stage: #000;
+    --ink: #14181d;
+    --paper: #e9e4d8;
+    --muted: #8b93a0;
+    --lamp: #f2b84b;
+    --ui: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --display: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; overflow: hidden; background: var(--stage); color: var(--paper); font: 16px/1.45 var(--ui); }
+
+  /* Layout: photos on the left (75%), map on the right (25%); neither scrolls */
+  body { display: grid; grid-template-columns: 3fr 1fr; }
+  body.no-map { grid-template-columns: 1fr; }
+  body.no-map #map { display: none; }
+  #photos { position: relative; min-width: 0; overflow: hidden; }
+  #photos.zoomed { cursor: grab; }
+  #photos.zoomed:active { cursor: grabbing; }
+  [hidden] { display: none !important; }
+
+  /* Media layers: two stacked, cross-faded */
+  .layer { position: absolute; inset: 0; opacity: 0; transition: opacity var(--fade) ease; }
+  .layer.visible { opacity: 1; }
+  .layer > img, .layer > video { display: block; user-select: none; -webkit-user-drag: none; width: 100%; height: 100%; object-fit: contain; }
+
+  /* Map */
+  #map { position: relative; min-width: 0; overflow: hidden; background: #d9d4c7; border-left: 1px solid #000; }
+  #map .gmap { position: absolute; inset: 0; }
+  #map .pin { position: absolute; border-radius: 50%; transform: translate(-50%, -50%); pointer-events: none; }
+  #map .path { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+  #map .path polyline { fill: none; stroke: var(--ink); stroke-width: 3; stroke-linejoin: round; stroke-linecap: round; opacity: .9; filter: drop-shadow(0 0 1.5px #fff); } /* light halo keeps it visible on satellite imagery */
+  #map .path circle { fill: var(--ink); stroke: #fff; stroke-width: 2; }
+  #map .pin.next { width: 22px; height: 22px; background: var(--lamp); border: 4px solid var(--ink); box-shadow: 0 0 0 8px rgba(242, 184, 75, .35); }
+  #map .notice { position: absolute; inset: 0; display: grid; place-content: center; padding: 20px; text-align: center; background: var(--ink); color: var(--muted); font: 400 clamp(1rem, 1.5vw, 1.3rem)/1.35 var(--display); }
+
+  /* Timeline scrubber down the left of the photo frame */
+  #photos.scrubbing .layer { transition: none; }
+  #timeline { position: absolute; left: 10px; top: 5%; height: 90%; width: 0; opacity: .45; transition: opacity .2s; }
+  #timeline:has(.rail:hover), #timeline:focus-within, #timeline.dragging { opacity: 1; }
+  #timeline .rail { position: absolute; left: 0; top: 0; bottom: 0; width: 26px; cursor: pointer; touch-action: none; border-radius: 13px; }
+  #timeline .rail::before { content: ""; position: absolute; left: 10px; top: 0; bottom: 0; width: 6px; border-radius: 3px; background: rgba(233, 228, 216, .55); box-shadow: 0 0 0 1px rgba(20, 24, 29, .6); }
+  #timeline .thumb { position: absolute; left: 50%; width: 18px; height: 34px; transform: translate(-50%, -50%); border-radius: 9px; background: var(--lamp); border: 2px solid var(--ink); cursor: grab; }
+  #timeline.dragging .thumb { cursor: grabbing; }
+  #timeline .labels { position: absolute; left: 34px; top: 0; bottom: 0; pointer-events: none; }
+  #timeline .labels span { position: absolute; transform: translateY(-50%); font-size: 12px; white-space: nowrap; color: var(--paper); text-shadow: 0 1px 3px #000, 0 0 2px #000; font-variant-numeric: tabular-nums; }
+
+  /* Control bar over the photo frame */
+  #controls { position: absolute; left: 50%; bottom: max(16px, env(safe-area-inset-bottom)); transform: translateX(-50%); display: flex; align-items: center; gap: 4px; padding: 6px 16px 6px 8px; border-radius: 999px; background: rgba(20, 24, 29, .78); opacity: .45; transition: opacity .2s; white-space: nowrap; }
+  #controls:hover, #controls:focus-within { opacity: 1; }
+  #controls button { width: 44px; height: 44px; padding: 10px; border: 0; border-radius: 50%; }
+  #controls button:hover { background: rgba(233, 228, 216, .14); }
+  #controls svg { display: block; width: 100%; height: 100%; fill: currentColor; }
+  #controls .speed { display: flex; align-items: center; gap: 8px; margin-left: 10px; font-size: 14px; color: var(--muted); }
+  #controls input[type="range"] { width: clamp(70px, 12vw, 150px); accent-color: var(--lamp); }
+  #controls output { min-width: 2.6em; color: var(--paper); font-variant-numeric: tabular-nums; }
+
+  /* Start screen */
+  #start { position: fixed; inset: 0; display: grid; place-content: center; justify-items: start; gap: 14px; padding: 32px; background: var(--ink); }
+  #start h1 { margin: 0; font: 400 clamp(2.4rem, 7vw, 4.2rem)/1.05 var(--display); letter-spacing: -.01em; }
+  #start p { margin: 0 0 10px; max-width: 34ch; color: var(--muted); }
+  #start .actions { display: flex; flex-wrap: wrap; gap: 10px; }
+
+  button { font: inherit; color: var(--paper); background: transparent; border: 1px solid rgba(233, 228, 216, .35); border-radius: 6px; padding: 10px 16px; cursor: pointer; }
+  button:hover { border-color: var(--paper); }
+  button.primary { background: var(--lamp); border-color: var(--lamp); color: var(--ink); font-weight: 600; }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--lamp); outline-offset: 2px; }
+
+  /* Settings */
+  #gear { position: fixed; top: max(14px, env(safe-area-inset-top)); right: 14px; width: 44px; height: 44px; padding: 9px; border: 0; border-radius: 50%; background: rgba(20, 24, 29, .55); opacity: .4; transition: opacity .2s; }
+  #gear:hover, #gear:focus-visible, #gear[aria-expanded="true"] { opacity: 1; }
+  #gear svg { display: block; width: 100%; height: 100%; }
+  #panel { position: fixed; top: calc(max(14px, env(safe-area-inset-top)) + 54px); right: 14px; width: min(320px, calc(100vw - 28px)); padding: 18px; display: grid; gap: 14px; background: var(--ink); border: 1px solid rgba(233, 228, 216, .15); border-radius: 10px; }
+  #panel label { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  #panel input[type="number"] { width: 5em; padding: 6px 8px; font: inherit; color: var(--paper); background: #0c0f12; border: 1px solid rgba(233, 228, 216, .25); border-radius: 6px; }
+  #panel input[type="checkbox"] { width: 20px; height: 20px; accent-color: var(--lamp); }
+  #panel .row { display: flex; gap: 10px; }
+  #panel .row button { flex: 1; }
+
+  @media (prefers-reduced-motion: reduce) { #gear { transition: none; } }
+</style>
+</head>
+<body>
+  <main id="photos">
+    <div class="layer"></div>
+    <div class="layer"></div>
+    <div id="timeline" hidden>
+      <div class="rail" role="slider" tabindex="0" aria-orientation="vertical" aria-label="Position in slideshow"><div class="thumb"></div></div>
+      <div class="labels" aria-hidden="true"></div>
+    </div>
+    <div id="controls" role="toolbar" aria-label="Slideshow controls">
+      <button id="prev" aria-label="Previous"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5h2v14H6zM20 5v14L9 12z"/></svg></button>
+      <button id="play" aria-label="Pause">
+        <svg class="icon-pause" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg>
+        <svg class="icon-play" viewBox="0 0 24 24" aria-hidden="true" hidden><path d="M8 5v14l11-7z"/></svg>
+      </button>
+      <button id="next" aria-label="Next"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 5h2v14h-2zM4 5v14l11-7z"/></svg></button>
+      <label class="speed">Speed <input id="speed" type="range" min="1" max="5" step="1"> <output id="speed-out"></output></label>
+      <button id="mute" aria-label="Mute music" hidden>
+        <svg class="icon-sound" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9z"/><path d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        <svg class="icon-muted" viewBox="0 0 24 24" aria-hidden="true" hidden><path d="M4 9v6h4l5 4V5L8 9z"/><path d="M16.5 9.5l5 5M21.5 9.5l-5 5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+  </main>
+
+  <aside id="map" aria-label="Route map">
+    <div class="gmap"></div>
+    <svg class="path" hidden><polyline points=""/><g class="dots"></g></svg>
+    <div class="pin next" hidden></div>
+    <div class="notice">The route appears here once a photo with a location is shown.</div>
+  </aside>
+
+  <div id="start">
+    <h1>Slideshow</h1>
+    <p id="start-msg">Choose the folder that holds your photos and videos.</p>
+    <div class="actions">
+      <button id="resume" class="primary" hidden></button>
+      <button id="pick" class="primary">Choose folder</button>
+    </div>
+    <input id="fallback" type="file" webkitdirectory multiple hidden>
+  </div>
+
+  <button id="gear" aria-label="Settings" aria-expanded="false" aria-controls="panel">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="3"/>
+      <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3h.1a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8v.1a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>
+    </svg>
+  </button>
+
+  <div id="panel" hidden>
+    <label>Seconds per image <input id="duration" type="number" min="1" max="5" step="1"></label>
+    <label>Show map <input id="show-map" type="checkbox"></label>
+    <div class="row">
+      <button id="restart">Restart from beginning</button>
+      <button id="change">Change folder</button>
+    </div>
+  </div>
+
+<script>
+/*__SCRIPT__*/
+</script>
+</body>
+</html>

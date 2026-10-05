@@ -1,0 +1,12 @@
+{
+  "name": "slideshow",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Folder slideshow with route map, timeline and music. Runs from the filesystem.",
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2"
+  }
+}
