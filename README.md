@@ -14,6 +14,8 @@ Requires [Node.js](https://nodejs.org).
    referrer) restriction.
 3. `npm run build`
 
+While editing, `npm run watch` rebuilds automatically each time a file in `src/` is saved.
+
 This writes `slideshow.html`, a self-contained page with your key inside it. Both
 `apikey.txt` and `slideshow.html` are git-ignored; do not commit or share them.
 

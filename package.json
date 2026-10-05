@@ -4,7 +4,8 @@
   "private": true,
   "description": "Folder slideshow with route map, timeline and music. Runs from the filesystem.",
   "scripts": {
-    "build": "node build.mjs"
+    "build": "node build.mjs",
+    "watch": "node build.mjs --watch"
   },
   "devDependencies": {
     "typescript": "^7.0.2"
